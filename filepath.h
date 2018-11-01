@@ -1,5 +1,5 @@
-#ifndef NXCI_FILEPATH_H
-#define NXCI_FILEPATH_H
+#ifndef HACBREWPACK_FILEPATH_H
+#define HACBREWPACK_FILEPATH_H
 
 #include "types.h"
 #include <dirent.h>
@@ -25,8 +25,10 @@ typedef struct _stati64 os_stat64_t;
 #define os_closedir _wclosedir
 #define os_readdir _wreaddir
 #define os_stat _wstati64
+#define os_char_stat _stat64
 #define os_fclose fclose
 #define os_rename _wrename
+#define os_deletefile remove
 #define OS_MODE_READ L"rb"
 #define OS_MODE_WRITE L"wb"
 #define OS_MODE_EDIT L"rb+"
@@ -43,8 +45,10 @@ typedef struct stat os_stat64_t;
 #define os_closedir closedir
 #define os_readdir readdir
 #define os_stat stat
+#define os_char_stat stat
 #define os_fclose fclose
 #define os_rename rename
+#define os_deletefile unlink
 #define OS_MODE_READ "rb"
 #define OS_MODE_WRITE "wb"
 #define OS_MODE_EDIT "rb+"
@@ -70,7 +74,6 @@ void filepath_append_n(filepath_t *fpath, uint32_t n, const char *format, ...);
 void filepath_os_append(filepath_t *fpath, oschar_t *path);
 void filepath_set(filepath_t *fpath, const char *path);
 oschar_t *filepath_get(filepath_t *fpath);
-
-
+int filepath_remove_directory(filepath_t *dir_path);
 
 #endif

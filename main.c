@@ -12,8 +12,7 @@
 #include "cnmt.h"
 #include "pfs0.h"
 
-/* 4NXCI by The-4n
-   Based on hactool by SciresM
+/* hacBrewPack by The-4n
    */
 
 // Print Usage
@@ -32,9 +31,12 @@ static void usage(void)
             "--logodir                Set program logo directory path, default path is ." OS_PATH_SEPARATOR "logo" OS_PATH_SEPARATOR "\n"
             "--controldir             Set control romfs directory path, default path is ." OS_PATH_SEPARATOR "control" OS_PATH_SEPARATOR "\n"
             "--keygeneration          Set keygeneration for encrypting key area, default keygeneration is 1\n"
+            "--keyareakey             Set key area key 2 in hex with 16 bytes lenght\n"
+            "--sdkversion             Set SDK version in hex, default SDK version is 000C1100\n"
             "--noromfs                Skip creating program romfs section\n"
             "--nologo                 Skip creating program logo section\n"
-            "--plaintext              Skip encrypting sections and set section header block crypto type to plaintext\n",
+            "--plaintext              Skip encrypting sections and set section header block crypto type to plaintext\n"
+            "--keepncadir             Keep NCA directory\n",
             USAGE_PROGRAM_NAME);
     exit(EXIT_FAILURE);
 }
@@ -46,17 +48,17 @@ int main(int argc, char **argv)
     memset(&settings, 0, sizeof(settings));
     memset(&cnmt_ctx, 0, sizeof(cnmt_ctx));
 
-    printf("hacBrewPack %s by The-4n\n", HACBREWPACK_VERSION);
+    printf("hacBrewPack %s by The-4n\n\n", HACBREWPACK_VERSION);
 
-    // Hardcode temp directory and create it
+    // Hardcode default temp directory
     filepath_init(&settings.temp_dir);
     filepath_set(&settings.temp_dir, "hacbrewpack_temp");
 
-    // Hardcode output directory and create it
-    filepath_init(&settings.out_dir);
-    filepath_set(&settings.out_dir, "hacbrewpack_nca");
+    // Hardcode default output nca directory
+    filepath_init(&settings.nca_dir);
+    filepath_set(&settings.nca_dir, "hacbrewpack_nca");
 
-    // Hardcode nsp  directory and create it
+    // Hardcode default output nsp directory
     filepath_init(&settings.nsp_dir);
     filepath_set(&settings.nsp_dir, "hacbrewpack_nsp");
 
@@ -82,8 +84,11 @@ int main(int argc, char **argv)
     // Default keyset filepath
     filepath_set(&keypath, "keys.dat");
 
-    // Default keygeneration
+    // Default Settings
     settings.keygeneration = 1;
+    settings.sdk_version = 0x000C1100;
+    settings.keyareakey = (unsigned char *)calloc(1, 0x10);
+    memset(settings.keyareakey, 4, 0x10);
 
     // Parse options
     while (1)
@@ -105,6 +110,9 @@ int main(int argc, char **argv)
                 {"nologo", 0, NULL, 9},
                 {"plaintext", 0, NULL, 10},
                 {"keygeneration", 1, NULL, 11},
+                {"sdkversion", 1, NULL, 12},
+                {"keyareakey", 1, NULL, 13},
+                {"keepncadir", 0, NULL, 14},
                 {NULL, 0, NULL, 0},
             };
 
@@ -124,7 +132,7 @@ int main(int argc, char **argv)
             filepath_set(&settings.temp_dir, optarg);
             break;
         case 2:
-            filepath_set(&settings.out_dir, optarg);
+            filepath_set(&settings.nca_dir, optarg);
             break;
         case 3:
             filepath_set(&settings.nsp_dir, optarg);
@@ -152,17 +160,42 @@ int main(int argc, char **argv)
             break;
         case 11:
             settings.keygeneration = atoi(optarg);
+            // Validating Keygeneration
+            if (settings.keygeneration < 1 || settings.keygeneration > 32)
+            {
+                fprintf(stderr, "Invalid keygeneration: %i, keygeneration range: 1-32\n", settings.keygeneration);
+                return EXIT_FAILURE;
+            }
+            break;
+        case 12:
+            settings.sdk_version = strtoul(optarg, NULL, 16);
+            // Validating SDK Version
+            if (settings.sdk_version < 0x000B0000 || settings.sdk_version > 0x00FFFFFF)
+            {
+                fprintf(stderr, "Error: Invalid SDK version: %08" PRIX32 "\n"
+                                "Valid SDK version range: 000B0000 - 00FFFFFF\n",
+                        settings.sdk_version);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        case 13:
+            parse_hex_key(settings.keyareakey, optarg, 0x10);
+            break;
+        case 14:
+            settings.keepncadir = 1;
             break;
         default:
             usage();
         }
     }
 
-    // Create directories
-    os_rmdir(settings.temp_dir.os_path);
+    // Remove existing temp and nca directories and Create new ones + nsp directory
+    printf("Removing existing temp and nca directories\n");
+    filepath_remove_directory(&settings.temp_dir);
+    filepath_remove_directory(&settings.nca_dir);
+    printf("Creating temp, nca and nsp directories\n");
     os_makedir(settings.temp_dir.os_path);
-    os_rmdir(settings.out_dir.os_path);
-    os_makedir(settings.out_dir.os_path);
+    os_makedir(settings.nca_dir.os_path);
     os_makedir(settings.nsp_dir.os_path);
 
     // Try to populate default keyfile.
@@ -183,12 +216,6 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    // Validating Keygeneration
-    if (settings.keygeneration < 1 || settings.keygeneration > 32)
-    {
-        fprintf(stderr, "Invalid keygeneration: %i, keygeneration range: 1-32\n", settings.keygeneration);
-        return EXIT_FAILURE;
-    }
     // Make sure that key_area_key_application_keygen exists
     uint8_t has_keygen_key = 0;
     for (unsigned int i = 0; i < 0x10; i++)
@@ -204,7 +231,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "Error: key_area_key_application for keygeneration %i is not present in keyset file\n", settings.keygeneration);
         return EXIT_FAILURE;
     }
-    
+
     // Make sure that header_key exists
     uint8_t has_header_Key = 0;
     for (unsigned int i = 0; i < 0x10; i++)
@@ -222,7 +249,8 @@ int main(int argc, char **argv)
     }
 
     // Get TitleID from NACP
-    printf("----> Process NACP\n");
+    printf("\n");
+    printf("----> Processing NACP\n");
     nacp_process(&settings, &cnmt_ctx);
     printf("\n");
 
@@ -241,8 +269,47 @@ int main(int argc, char **argv)
     filepath_copy(&nsp_file_path, &settings.nsp_dir);
     filepath_append(&nsp_file_path, "%016" PRIx64 ".nsp", cnmt_ctx.cnmt_header.title_id);
     uint64_t pfs0_size;
-    pfs0_build(&settings.out_dir, &nsp_file_path, &pfs0_size);
+    pfs0_build(&settings.nca_dir, &nsp_file_path, &pfs0_size);
     printf("\n----> Created NSP: %s\n", nsp_file_path.char_path);
 
+    // Remove temp and nca directories
+    printf("\n");
+    if (settings.keepncadir == 1)
+    {
+        printf("Removing created temp directory\n");
+        filepath_remove_directory(&settings.temp_dir);
+    }
+    else
+    {
+        printf("Removing created temp and nca directories\n");
+        filepath_remove_directory(&settings.temp_dir);
+        filepath_remove_directory(&settings.nca_dir);
+    }
+
+    // Summary
+    printf("\n\n");
+    printf("Summary:\n\n");
+    printf("Title ID: %016" PRIx64 "\n", cnmt_ctx.cnmt_header.title_id);
+    printf("SDK Version: %" PRId8 ".%" PRId8 ".%" PRId8 ".%" PRId8 "\n", settings.sdk_major, settings.sdk_minor, settings.sdk_micro, settings.sdk_revision);
+    if (settings.plaintext == 0)
+        printf("Section Crypto Type: Regular Crypto\n");
+    else
+        printf("Sections Crypto Type: Plaintext\n");
+    printf("Keygeneration: %i\n", settings.keygeneration);
+    char keyareakey_hex[33];
+    hexBinaryString(settings.keyareakey, 16, keyareakey_hex, 33);
+    keyareakey_hex[32] = '\0';
+    printf("Key area key 2: %s\n", keyareakey_hex);
+    if (settings.noromfs == 0)
+        printf("Program NCA RomFS Section: Yes\n");
+    else
+        printf("Program NCA RomFS Section: No\n");
+    if (settings.nologo == 0)
+        printf("Program NCA Logo Section: Yes\n");
+    else
+        printf("Program NCA Logo Section: No\n");
+    printf("Created NSP: %s\n", nsp_file_path.char_path);
+
+    free(settings.keyareakey);
     return EXIT_SUCCESS;
 }

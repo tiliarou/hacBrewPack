@@ -16,7 +16,7 @@ void nca_create_control(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
 
     filepath_t control_nca_path;
     filepath_init(&control_nca_path);
-    filepath_copy(&control_nca_path, &settings->out_dir);
+    filepath_copy(&control_nca_path, &settings->nca_dir);
     filepath_append(&control_nca_path, "control.nca");
 
     FILE *control_nca_file;
@@ -34,14 +34,6 @@ void nca_create_control(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
 
     printf("\n---> Creating Section 0:");
 
-    //Build RomFS
-    filepath_t romfs_control;
-    filepath_init(&romfs_control);
-    filepath_copy(&romfs_control, &settings->temp_dir);
-    filepath_append(&romfs_control, "control_sec0_romfs");
-    printf("\n===> Building RomFS\n");
-    romfs_build(&settings->control_romfs_dir, &romfs_control);
-
     // Set IVFC levels temp filepaths
     filepath_t ivfc_lvls_path[6];
     for (int a = 0; a < 6; a++)
@@ -51,11 +43,13 @@ void nca_create_control(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
         filepath_append(&ivfc_lvls_path[a], "control_sec0_ivfc_lvl%i", a + 1);
     }
 
+    //Build RomFS
+    printf("\n===> Building RomFS\n");
+    romfs_build(&settings->control_romfs_dir, &ivfc_lvls_path[5], &nca_header.fs_headers[0].romfs_superblock.ivfc_header.level_headers[5].hash_data_size);
+    nca_header.fs_headers[0].romfs_superblock.ivfc_header.level_headers[5].block_size = 0x0E; // 0x4000
+
     // Create IVFC levels
     printf("\n===> Creating IVFC levels\n");
-    printf("Writing %s\n", ivfc_lvls_path[5].char_path);
-    ivfc_create_level6(&ivfc_lvls_path[5], &romfs_control, &nca_header.fs_headers[0].romfs_superblock.ivfc_header.level_headers[5].hash_data_size);
-    nca_header.fs_headers[0].romfs_superblock.ivfc_header.level_headers[5].block_size = 0x0E; // 0x4000
     for (int b = 4; b >= 0; b--)
     {
         printf("Writing %s\n", ivfc_lvls_path[b].char_path);
@@ -82,8 +76,7 @@ void nca_create_control(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
     // Common values
     nca_header.magic = MAGIC_NCA3;
     nca_header.content_type = 0x2; // Control
-    nca_header.sdk_minor = 12;
-    nca_header.sdk_micro = 17;
+    nca_header.sdk_version = settings->sdk_version;
     nca_header.title_id = cnmt_ctx->cnmt_header.title_id;
     nca_set_keygen(&nca_header, settings);
 
@@ -91,8 +84,8 @@ void nca_create_control(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
     nca_header.section_entries[0].media_end_offset = (uint32_t)(ftello64(control_nca_file) / 0x200); // Section end offset / 200
     nca_header.section_entries[0]._0x8[0] = 0x1;                                                     // Always 1
 
-    nca_header.fs_headers[0].fs_type = FS_TYPE_ROMFS;
-    nca_header.fs_headers[0]._0x0 = 0x2; // Always 2
+    nca_header.fs_headers[0].hash_type = HASH_TYPE_ROMFS;
+    nca_header.fs_headers[0].version = 0x2; // Always 2
     nca_header.fs_headers[0].romfs_superblock.ivfc_header.magic = MAGIC_IVFC;
     nca_header.fs_headers[0].romfs_superblock.ivfc_header.id = 0x20000; //Always 0x20000
     nca_header.fs_headers[0].romfs_superblock.ivfc_header.master_hash_size = 0x20;
@@ -112,7 +105,7 @@ void nca_create_control(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
     printf("\n---> Finalizing:\n");
 
     // Set encrypted key area key 2
-    memset(nca_header.encrypted_keys[2], 4, 0x10);
+    memcpy(nca_header.encrypted_keys[2], settings->keyareakey, 0x10);
 
     printf("===> Encrypting NCA\n");
     if (settings->plaintext == 0)
@@ -147,7 +140,7 @@ void nca_create_control(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
     // Rename control.nca to ncaid.nca
     filepath_t control_nca_final_path;
     filepath_init(&control_nca_final_path);
-    filepath_copy(&control_nca_final_path, &settings->out_dir);
+    filepath_copy(&control_nca_final_path, &settings->nca_dir);
     char control_nca_name[37];
     hexBinaryString(cnmt_ctx->cnmt_content_records[1].ncaid, 16, control_nca_name, 33);
     strcat(control_nca_name, ".nca");
@@ -167,7 +160,7 @@ void nca_create_program(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
 
     filepath_t program_nca_path;
     filepath_init(&program_nca_path);
-    filepath_copy(&program_nca_path, &settings->out_dir);
+    filepath_copy(&program_nca_path, &settings->nca_dir);
     filepath_append(&program_nca_path, "program.nca");
 
     FILE *program_nca_file;
@@ -212,8 +205,7 @@ void nca_create_program(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
     // Common values
     nca_header.magic = MAGIC_NCA3;
     nca_header.content_type = 0x0; // Program
-    nca_header.sdk_minor = 12;
-    nca_header.sdk_micro = 17;
+    nca_header.sdk_version = settings->sdk_version;
     nca_header.title_id = cnmt_ctx->cnmt_header.title_id;
     nca_set_keygen(&nca_header, settings);
 
@@ -221,9 +213,9 @@ void nca_create_program(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
     nca_header.section_entries[0].media_end_offset = (uint32_t)(ftello64(program_nca_file) / 0x200); // Section end offset / 200
     nca_header.section_entries[0]._0x8[0] = 0x1;                                                     // Always 1
 
+    nca_header.fs_headers[0].hash_type = HASH_TYPE_PFS0;
     nca_header.fs_headers[0].fs_type = FS_TYPE_PFS0;
-    nca_header.fs_headers[0].partition_type = 0x1;
-    nca_header.fs_headers[0]._0x0 = 0x2; // Always 2
+    nca_header.fs_headers[0].version = 0x2; // Always 2
     nca_header.fs_headers[0].pfs0_superblock.always_2 = 0x2;
     nca_header.fs_headers[0].pfs0_superblock.block_size = PFS0_HASH_BLOCK_SIZE;
     if (settings->plaintext == 0)
@@ -243,14 +235,6 @@ void nca_create_program(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
 
         printf("\n---> Creating Section 1:");
 
-        //Build RomFS
-        filepath_t romfs_program;
-        filepath_init(&romfs_program);
-        filepath_copy(&romfs_program, &settings->temp_dir);
-        filepath_append(&romfs_program, "program_sec1_romfs");
-        printf("\n===> Building RomFS\n");
-        romfs_build(&settings->romfs_dir, &romfs_program);
-
         // Set IVFC levels temp filepaths
         filepath_t ivfc_lvls_path[6];
         for (int a = 0; a < 6; a++)
@@ -260,11 +244,13 @@ void nca_create_program(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
             filepath_append(&ivfc_lvls_path[a], "program_sec1_ivfc_lvl%i", a + 1);
         }
 
+        //Build RomFS
+        printf("\n===> Building RomFS\n");
+        romfs_build(&settings->romfs_dir, &ivfc_lvls_path[5], &nca_header.fs_headers[1].romfs_superblock.ivfc_header.level_headers[5].hash_data_size);
+        nca_header.fs_headers[1].romfs_superblock.ivfc_header.level_headers[5].block_size = 0x0E; // 0x4000
+
         // Create IVFC levels
         printf("\n===> Creating IVFC levels\n");
-        printf("Writing %s\n", ivfc_lvls_path[5].char_path);
-        ivfc_create_level6(&ivfc_lvls_path[5], &romfs_program, &nca_header.fs_headers[1].romfs_superblock.ivfc_header.level_headers[5].hash_data_size);
-        nca_header.fs_headers[1].romfs_superblock.ivfc_header.level_headers[5].block_size = 0x0E; // 0x4000
         for (int b = 4; b >= 0; b--)
         {
             printf("Writing %s\n", ivfc_lvls_path[b].char_path);
@@ -293,8 +279,8 @@ void nca_create_program(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
         nca_header.section_entries[1].media_end_offset = (uint32_t)(ftello64(program_nca_file) / 0x200);
         nca_header.section_entries[1]._0x8[0] = 0x1; // Always 1
 
-        nca_header.fs_headers[1].fs_type = FS_TYPE_ROMFS;
-        nca_header.fs_headers[1]._0x0 = 0x2; // Always 2
+        nca_header.fs_headers[1].hash_type = HASH_TYPE_ROMFS;
+        nca_header.fs_headers[1].version = 0x2; // Always 2
         nca_header.fs_headers[1].romfs_superblock.ivfc_header.magic = MAGIC_IVFC;
         nca_header.fs_headers[1].romfs_superblock.ivfc_header.id = 0x20000; //Always 0x20000
         nca_header.fs_headers[1].romfs_superblock.ivfc_header.master_hash_size = 0x20;
@@ -348,9 +334,9 @@ void nca_create_program(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
         nca_header.section_entries[2].media_end_offset = (uint32_t)(ftello64(program_nca_file) / 0x200); // Section end offset / 200
         nca_header.section_entries[2]._0x8[0] = 0x1;                                                     // Always 1
 
+        nca_header.fs_headers[2].hash_type = HASH_TYPE_PFS0;
         nca_header.fs_headers[2].fs_type = FS_TYPE_PFS0;
-        nca_header.fs_headers[2].partition_type = 0x1;
-        nca_header.fs_headers[2]._0x0 = 0x2;       // Always 2
+        nca_header.fs_headers[2].version = 0x2;       // Always 2
         nca_header.fs_headers[2].crypt_type = 0x1; // Plain text
         nca_header.fs_headers[2].pfs0_superblock.always_2 = 0x2;
         nca_header.fs_headers[2].pfs0_superblock.block_size = PFS0_HASH_BLOCK_SIZE;
@@ -366,7 +352,7 @@ void nca_create_program(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
     printf("\n---> Finalizing:\n");
 
     // Set encrypted key area key 2
-    memset(nca_header.encrypted_keys[2], 4, 0x10);
+    memcpy(nca_header.encrypted_keys[2], settings->keyareakey, 0x10);
 
     printf("===> Encrypting NCA\n");
     // Encrypt sections
@@ -403,10 +389,10 @@ void nca_create_program(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
 
     fclose(program_nca_file);
 
-    // Rename control.nca to ncaid.nca
+    // Rename program.nca to ncaid.nca
     filepath_t program_nca_final_path;
     filepath_init(&program_nca_final_path);
-    filepath_copy(&program_nca_final_path, &settings->out_dir);
+    filepath_copy(&program_nca_final_path, &settings->nca_dir);
     char program_nca_name[37];
     hexBinaryString(cnmt_ctx->cnmt_content_records[0].ncaid, 16, program_nca_name, 33);
     strcat(program_nca_name, ".nca");
@@ -419,14 +405,14 @@ void nca_create_program(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
 
 void nca_create_meta(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
 {
-    printf("----> Creating Meta NCA:\n");
+    printf("----> Creating Metadata NCA:\n");
     printf("===> Creating NCA header\n");
     nca_header_t nca_header;
     memset(&nca_header, 0, sizeof(nca_header));
 
     filepath_t meta_nca_path;
     filepath_init(&meta_nca_path);
-    filepath_copy(&meta_nca_path, &settings->out_dir);
+    filepath_copy(&meta_nca_path, &settings->nca_dir);
     filepath_append(&meta_nca_path, "meta.nca");
 
     FILE *meta_nca_file;
@@ -483,8 +469,7 @@ void nca_create_meta(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
     // Common values
     nca_header.magic = MAGIC_NCA3;
     nca_header.content_type = 0x1; // Meta
-    nca_header.sdk_minor = 12;
-    nca_header.sdk_micro = 17;
+    nca_header.sdk_version = settings->sdk_version;
     nca_header.title_id = cnmt_ctx->cnmt_header.title_id;
     nca_set_keygen(&nca_header, settings);
 
@@ -492,9 +477,9 @@ void nca_create_meta(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
     nca_header.section_entries[0].media_end_offset = (uint32_t)(ftello64(meta_nca_file) / 0x200); // Section end offset / 200
     nca_header.section_entries[0]._0x8[0] = 0x1;                                                  // Always 1
 
+    nca_header.fs_headers[0].hash_type = HASH_TYPE_PFS0;
     nca_header.fs_headers[0].fs_type = FS_TYPE_PFS0;
-    nca_header.fs_headers[0].partition_type = 0x1;
-    nca_header.fs_headers[0]._0x0 = 0x2; // Always 2
+    nca_header.fs_headers[0].version = 0x2; // Always 2
     nca_header.fs_headers[0].pfs0_superblock.always_2 = 0x2;
     nca_header.fs_headers[0].pfs0_superblock.block_size = PFS0_HASH_BLOCK_SIZE;
     if (settings->plaintext == 0)
@@ -512,7 +497,7 @@ void nca_create_meta(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
     printf("\n---> Finalizing:\n");
 
     // Set encrypted key area key 2
-    memset(nca_header.encrypted_keys[2], 4, 0x10);
+    memcpy(nca_header.encrypted_keys[2], settings->keyareakey, 0x10);
 
     printf("===> Encrypting NCA\n");
     if (settings->plaintext == 0)
@@ -547,7 +532,7 @@ void nca_create_meta(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx)
     // Rename meta.nca to ncaid.cnmt.nca
     filepath_t meta_nca_final_path;
     filepath_init(&meta_nca_final_path);
-    filepath_copy(&meta_nca_final_path, &settings->out_dir);
+    filepath_copy(&meta_nca_final_path, &settings->nca_dir);
     char meta_nca_name[42];
     hexBinaryString(cnmt_ctx->cnmt_content_records[2].ncaid, 16, meta_nca_name, 33);
     strcat(meta_nca_name, ".cnmt.nca");

@@ -22,15 +22,15 @@ typedef struct
 
 typedef enum
 {
-    PARTITION_ROMFS = 0,
-    PARTITION_PFS0 = 1
-} section_partition_type_t;
+    FS_TYPE_ROMFS = 0,
+    FS_TYPE_PFS0 = 1
+} section_fs_type_t;
 
 typedef enum
 {
-    FS_TYPE_PFS0 = 2,
-    FS_TYPE_ROMFS = 3
-} section_fs_type_t;
+    HASH_TYPE_PFS0 = 2,
+    HASH_TYPE_ROMFS = 3
+} section_hash_type_t;
 
 typedef enum
 {
@@ -44,10 +44,9 @@ typedef enum
 #pragma pack(push, 1)
 typedef struct
 {
-    uint8_t _0x0;
-    uint8_t _0x1;
-    uint8_t partition_type;
+    uint16_t version;
     uint8_t fs_type;
+    uint8_t hash_type;
     uint8_t crypt_type;
     uint8_t _0x5[0x3];
     union { /* FS-specific superblock. Size = 0x138. */
@@ -93,25 +92,6 @@ typedef struct
     nca_fs_header_t fs_headers[4];          /* FS section headers. */
 } nca_header_t;
 #pragma pack(pop)
-
-enum nca_section_type
-{
-    PFS0,
-    ROMFS,
-    BKTR,
-    NCA0_ROMFS,
-    INVALID
-};
-
-enum nca_version
-{
-    NCAVERSION_UNKNOWN = 0,
-    NCAVERSION_NCA0_BETA,
-    NCAVERSION_NCA0,
-    /* NCAVERSION_NCA1, // Does this exist? */
-    NCAVERSION_NCA2,
-    NCAVERSION_NCA3
-};
 
 void nca_create_control(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx);
 void nca_create_program(hbp_settings_t *settings, cnmt_ctx_t *cnmt_ctx);

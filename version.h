@@ -2,11 +2,11 @@
 #define HACBREWPACK_VERSION_H
 
 #if defined(_WIN32) || defined(_WIN64)
-    #define USAGE_PROGRAM_NAME "hackbrewpack.exe"
+    #define USAGE_PROGRAM_NAME "hacbrewpack.exe"
 #else
-    #define USAGE_PROGRAM_NAME "hackbrewpack"
+    #define USAGE_PROGRAM_NAME "hacbrewpack"
 #endif
 
-#define HACBREWPACK_VERSION "v1.00"
+#define HACBREWPACK_VERSION "v1.18"
 
 #endif
