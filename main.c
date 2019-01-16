@@ -9,6 +9,7 @@
 #include "extkeys.h"
 #include "version.h"
 #include "nacp.h"
+#include "npdm.h"
 #include "cnmt.h"
 #include "pfs0.h"
 
@@ -30,13 +31,18 @@ static void usage(void)
             "--romfsdir               Set program romfs directory path, default path is ." OS_PATH_SEPARATOR "romfs" OS_PATH_SEPARATOR "\n"
             "--logodir                Set program logo directory path, default path is ." OS_PATH_SEPARATOR "logo" OS_PATH_SEPARATOR "\n"
             "--controldir             Set control romfs directory path, default path is ." OS_PATH_SEPARATOR "control" OS_PATH_SEPARATOR "\n"
+            "--noromfs                Skip creating program romfs section\n"
+            "--nologo                 Skip creating program logo section\n"
             "--keygeneration          Set keygeneration for encrypting key area, default keygeneration is 1\n"
             "--keyareakey             Set key area key 2 in hex with 16 bytes lenght\n"
             "--sdkversion             Set SDK version in hex, default SDK version is 000C1100\n"
-            "--noromfs                Skip creating program romfs section\n"
-            "--nologo                 Skip creating program logo section\n"
             "--plaintext              Skip encrypting sections and set section header block crypto type to plaintext\n"
-            "--keepncadir             Keep NCA directory\n",
+            "--keepncadir             Keep NCA directory\n"
+            "Overriding options:\n"
+            "--titleid                Use specified titleid for creating ncas and patch titleid in npdm and nacp\n"
+            "--titlename              Change title name in nacp for all languages, max size is 512 bytes\n"
+            "--titlepublisher         Change title publisher in nacp for all languages, max size is 256 bytes\n"
+            "--nopatchnacplogo        Skip changing logo handeling to auto in NACP\n",
             USAGE_PROGRAM_NAME);
     exit(EXIT_FAILURE);
 }
@@ -113,6 +119,10 @@ int main(int argc, char **argv)
                 {"sdkversion", 1, NULL, 12},
                 {"keyareakey", 1, NULL, 13},
                 {"keepncadir", 0, NULL, 14},
+                {"nopatchnacplogo", 0, NULL, 15},
+                {"titleid", 1, NULL, 16},
+                {"titlename", 1, NULL, 17},
+                {"titlepublisher", 1, NULL, 18},
                 {NULL, 0, NULL, 0},
             };
 
@@ -170,7 +180,7 @@ int main(int argc, char **argv)
         case 12:
             settings.sdk_version = strtoul(optarg, NULL, 16);
             // Validating SDK Version
-            if (settings.sdk_version < 0x000B0000 || settings.sdk_version > 0x00FFFFFF)
+            if (settings.sdk_version < 0x000B0000)
             {
                 fprintf(stderr, "Error: Invalid SDK version: %08" PRIX32 "\n"
                                 "Valid SDK version range: 000B0000 - 00FFFFFF\n",
@@ -183,6 +193,30 @@ int main(int argc, char **argv)
             break;
         case 14:
             settings.keepncadir = 1;
+            break;
+        case 15:
+            settings.nopatchnacplogo = 1;
+            break;
+        case 16:
+            settings.title_id = strtoull(optarg, NULL, 16);
+            break;
+        case 17:
+            if (strlen(optarg) < 0x200)
+                strcpy(settings.titlename, optarg);
+            else
+            {
+                fprintf(stderr, "Error: titlename is longer than 512 bytes\n");
+                exit(EXIT_FAILURE);
+            }
+            break;
+        case 18:
+            if (strlen(optarg) < 0x100)
+                strcpy(settings.titlepublisher, optarg);
+            else
+            {
+                fprintf(stderr, "Error: titlepublisher is longer than 256 bytes\n");
+                exit(EXIT_FAILURE);
+            }
             break;
         default:
             usage();
@@ -248,10 +282,15 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    // Get TitleID from NACP
+    // Process NPDM
     printf("\n");
+    printf("----> Processing NPDM\n");
+    npdm_process(&settings, &cnmt_ctx);
+    printf("\n");
+
+    // Process NACP
     printf("----> Processing NACP\n");
-    nacp_process(&settings, &cnmt_ctx);
+    nacp_process(&settings);
     printf("\n");
 
     // Create NCAs

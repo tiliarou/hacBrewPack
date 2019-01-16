@@ -22,7 +22,8 @@ key_area_key_application_xx | Application key area encryption keys
 ### Compiling Homebrew
 
 You need to compile homebrew with proper Makefile, you can use the one in template folder  
-You must use valid lower-case titleid in Makefile and npdm.json. Valid titleid range is: 0x0100000000000000 - 0x01ffffffffffffff  
+You must use valid lower-case titleid in Makefile and npdm.json. Valid titleid range is: 0x0100000000000000 - 0x0fffffffffffffff  
+It's not suggested to use a titleid higher than 0x01ffffffffffffff  
 Both titleids in Makefile and npdm.json must be the same  
 Compiled homebrew must have following files:  
 
@@ -67,16 +68,21 @@ Options:
 --romfsdir               Set program romfs directory path, default path is ./romfs/  
 --logodir                Set program logo directory path, default path is ./logo/  
 --controldir             Set control romfs directory path, default path is ./control/  
+--noromfs                Skip creating program romfs section  
+--nologo                 Skip creating program logo section  
 --keygeneration          Set keygeneration for encrypting key area keys  
 --keyareakey             Set Set key area key 2 in hex with 16 bytes lenght  
 --sdkversion             Set SDK version in hex, default SDK version is 000C1100  
---noromfs                Skip creating program romfs section  
---nologo                 Skip creating program logo section  
 --plaintext              Skip encrypting sections and set section header block crypto type to plaintext  
 --keepncadir             Keep NCA directory  
+Overriding options:  
+--titleid                Use specified titleid for creating ncas and patch titleid in npdm and nacp  
+--titlename              Change title name in nacp for all languages, max size is 512 bytes  
+--titlepublisher         Change title publisher in nacp for all languages, max size is 256 bytes  
+--nopatchnacplogo        Skip changing logo handeling to auto in NACP  
 ```
 
-HacBrewPack doesn't need any options to work. if you follow folder structure properly, you can just run the program and it'll make NSP  
+hacBrewPack doesn't need any options to work. if you follow folder structure properly, you can just run the program and it'll make a NSP  
 Check template folder for default folder structure, Makefile, npdm json and other useful info  
 
 ## Licensing
